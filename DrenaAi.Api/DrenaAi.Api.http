@@ -1,0 +1,6 @@
+@DrenaAi.Api_HostAddress = http://localhost:5239
+
+GET {{DrenaAi.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
