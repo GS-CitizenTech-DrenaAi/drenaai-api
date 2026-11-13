@@ -1,5 +1,7 @@
 using System.Text;
+using DrenaAi.Api.Contexts.Ocorrencias;
 using DrenaAi.Api.Contexts.Priorizacao;
+using DrenaAi.Api.Contexts.Telemetrias;
 using DrenaAi.Api.Contexts.Usuarios;
 using DrenaAi.Api.Data;
 using DrenaAi.Api.Security;
@@ -20,6 +22,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseOracle(builder.Configuration.GetConnectionString("OracleConnection")));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IOcorrenciaService, OcorrenciaService>();
+builder.Services.AddScoped<ITelemetriaService, TelemetriaService>();
 builder.Services.AddSingleton<IPiiSanitizerService, PiiSanitizerService>();
 builder.Services.AddSingleton<ICalculadoraIpcService, CalculadoraIpcService>();
 
