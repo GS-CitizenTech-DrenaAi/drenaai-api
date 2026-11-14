@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace DrenaAi.Api.Contexts.Ocorrencias;
 
 /// <summary>
@@ -19,6 +21,7 @@ public enum OrigemOcorrencia
 /// <summary>
 /// Define os estados possíveis do ciclo de vida de atendimento de uma ocorrência na fila de coleta.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum StatusOcorrencia
 {
     /// <summary>
@@ -34,5 +37,10 @@ public enum StatusOcorrencia
     /// <summary>
     /// Ocorrência atendida e finalizada.
     /// </summary>
-    CONCLUIDA = 3
+    CONCLUIDA = 3,
+
+    /// <summary>
+    /// Ocorrência validada pela análise de IA antes ou durante a entrada na fila.
+    /// </summary>
+    VALIDADA = 4
 }

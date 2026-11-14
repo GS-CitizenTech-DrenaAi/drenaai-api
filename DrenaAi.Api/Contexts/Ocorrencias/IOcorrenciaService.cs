@@ -58,4 +58,16 @@ public interface IOcorrenciaService
     Task<PriorizarFilaResponse> PriorizarFilaAsync(
         Guid ocorrenciaId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atualiza o status de uma ocorrência existente e registra a transição no histórico cronológico.
+    /// </summary>
+    /// <param name="id">Identificador único da ocorrência.</param>
+    /// <param name="novoStatus">Novo status a ser aplicado à ocorrência.</param>
+    /// <param name="cancellationToken">Token de cancelamento da operação assíncrona.</param>
+    /// <returns>Detalhes atualizados da ocorrência com o novo histórico e posição na fila.</returns>
+    Task<OcorrenciaDetalheResponse> AtualizarStatusAsync(
+        Guid id,
+        StatusOcorrencia novoStatus,
+        CancellationToken cancellationToken = default);
 }

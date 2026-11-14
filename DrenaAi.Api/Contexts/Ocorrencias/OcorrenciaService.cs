@@ -106,7 +106,7 @@ public class OcorrenciaService : IOcorrenciaService
             avaliacaoFoto.Justificativa,
             parcelas,
             posicaoFila,
-            ocorrencia.CriadaEm);
+            NormalizarUtc(ocorrencia.CriadaEm));
     }
 
     /// <inheritdoc />
@@ -133,8 +133,13 @@ public class OcorrenciaService : IOcorrenciaService
             .ThenBy(o => o.CriadaEm)
             .ToListAsync(cancellationToken);
 
+        var posicaoAtiva = 0;
         return ocorrencias
-            .Select((o, idx) => MapearResumo(o, o.Status != StatusOcorrencia.CONCLUIDA ? idx + 1 : null))
+            .Select(o =>
+            {
+                int? posicao = o.Status != StatusOcorrencia.CONCLUIDA ? ++posicaoAtiva : null;
+                return MapearResumo(o, posicao);
+            })
             .ToList();
     }
 
@@ -154,7 +159,7 @@ public class OcorrenciaService : IOcorrenciaService
 
         var historicoOrdenado = ocorrencia.HistoricoStatus
             .OrderBy(h => h.DataHora)
-            .Select(h => new HistoricoStatusItemResponse(h.Status.ToString(), h.DataHora))
+            .Select(h => new HistoricoStatusItemResponse(h.Status.ToString(), NormalizarUtc(h.DataHora)))
             .ToList();
 
         var referenciaFotoOuTipo = string.IsNullOrWhiteSpace(ocorrencia.FotoUrl)
@@ -180,7 +185,7 @@ public class OcorrenciaService : IOcorrenciaService
             ocorrencia.Severidade,
             ocorrencia.Ipc,
             ocorrencia.Status.ToString(),
-            ocorrencia.CriadaEm,
+            NormalizarUtc(ocorrencia.CriadaEm),
             historicoOrdenado,
             MapearEnderecoVo(ocorrencia.Localizacao),
             avaliacaoFoto.Confianca,
@@ -250,6 +255,32 @@ public class OcorrenciaService : IOcorrenciaService
             Fila: filaAtualizada);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="NotFoundException">Lançada quando a ocorrência informada não existe.</exception>
+    public async Task<OcorrenciaDetalheResponse> AtualizarStatusAsync(
+        Guid id,
+        StatusOcorrencia novoStatus,
+        CancellationToken cancellationToken = default)
+    {
+        var ocorrencia = await _context.Ocorrencias
+            .Include(o => o.HistoricoStatus)
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+        if (ocorrencia is null)
+            throw new NotFoundException($"Ocorrência com ID '{id}' não encontrada.");
+
+        var novoHistorico = ocorrencia.AtualizarStatus(novoStatus);
+        _context.HistoricosStatus.Add(novoHistorico);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Status da ocorrência {OcorrenciaId} atualizado para {NovoStatus}.",
+            ocorrencia.Id,
+            novoStatus);
+
+        return await ObterPorIdAsync(ocorrencia.Id, cancellationToken);
+    }
+
     private async Task<int?> CalcularPosicaoNaFilaAsync(
         Guid ocorrenciaId,
         string bairro,
@@ -291,8 +322,13 @@ public class OcorrenciaService : IOcorrenciaService
         o.Severidade,
         o.Ipc,
         o.Status.ToString(),
-        o.CriadaEm,
+        NormalizarUtc(o.CriadaEm),
         MapearEnderecoVo(o.Localizacao),
         o.FotoUrl,
         posicaoFila);
+
+    private static DateTime NormalizarUtc(DateTime data) =>
+        data.Kind == DateTimeKind.Utc
+            ? data
+            : DateTime.SpecifyKind(data, DateTimeKind.Utc);
 }

@@ -239,4 +239,43 @@ public class OcorrenciaServiceTests
         detalhe.Latitude.Should().Be(-23.5461);
         detalhe.Longitude.Should().Be(-46.6388);
     }
+
+    /// <summary>
+    /// Deve atualizar o status da ocorrência, gravar o novo registro no histórico e removê-la da fila ao concluir.
+    /// </summary>
+    [Fact]
+    public async Task AtualizarStatusAsync_DeveAtualizarStatusERegistrarHistoricoERemoverDaFilaQuandoConcluida()
+    {
+        // Arrange
+        await using var context = CriarDbContextEmMemoria();
+        var service = CriarService(context);
+        var usuarioId = Guid.NewGuid();
+
+        var primeira = await service.CriarAsync(
+            new CriarOcorrenciaRequest("BUEIRO_ENTUPIDO", "Bueiro entupido", "foto_1.jpg", -23.5461, -46.6388, "Vale do Anhangabaú"),
+            usuarioId);
+        var segunda = await service.CriarAsync(
+            new CriarOcorrenciaRequest("LIXO_ORGANICO", "Lixo na calçada", "cenario_b.jpg", -23.5465, -46.6390, "Vale do Anhangabaú"),
+            usuarioId);
+
+        // Act - Avança para EM_ATENDIMENTO
+        var emAtendimento = await service.AtualizarStatusAsync(primeira.Id, StatusOcorrencia.EM_ATENDIMENTO);
+
+        // Assert - Permanece na fila e registra novo item no histórico
+        emAtendimento.Status.Should().Be(StatusOcorrencia.EM_ATENDIMENTO.ToString());
+        emAtendimento.PosicaoFila.Should().Be(1);
+        emAtendimento.HistoricoStatus.Should().HaveCount(2);
+        emAtendimento.HistoricoStatus.Select(h => h.Status).Should().ContainInOrder("NA_FILA", "EM_ATENDIMENTO");
+
+        // Act - Conclui a primeira ocorrência
+        var concluida = await service.AtualizarStatusAsync(primeira.Id, StatusOcorrencia.CONCLUIDA);
+        var detalheSegunda = await service.ObterPorIdAsync(segunda.Id);
+
+        // Assert - Sai da fila ativa e promove a segunda colocada para 1º lugar
+        concluida.Status.Should().Be(StatusOcorrencia.CONCLUIDA.ToString());
+        concluida.PosicaoFila.Should().BeNull();
+        concluida.HistoricoStatus.Should().HaveCount(3);
+        concluida.HistoricoStatus.Select(h => h.Status).Should().ContainInOrder("NA_FILA", "EM_ATENDIMENTO", "CONCLUIDA");
+        detalheSegunda.PosicaoFila.Should().Be(1);
+    }
 }

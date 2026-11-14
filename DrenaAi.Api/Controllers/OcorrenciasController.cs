@@ -141,6 +141,30 @@ public class OcorrenciasController : ControllerBase
         return Ok(detalhe);
     }
 
+    /// <summary>
+    /// Atualiza o status de uma ocorrência (webhook de zeladoria/coleta) e registra o histórico.
+    /// </summary>
+    /// <param name="id">Identificador único da ocorrência.</param>
+    /// <param name="request">Payload contendo o novo status desejado.</param>
+    /// <param name="cancellationToken">Token de cancelamento da requisição.</param>
+    /// <returns>Detalhes atualizados da ocorrência com linha do tempo e posição na fila recalculada.</returns>
+    /// <response code="200">Status atualizado com sucesso.</response>
+    /// <response code="400">Status informado inválido.</response>
+    /// <response code="404">Ocorrência não encontrada.</response>
+    [HttpPatch("{id:guid}/status")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(OcorrenciaDetalheResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OcorrenciaDetalheResponse>> AtualizarStatus(
+        [FromRoute] Guid id,
+        [FromBody] AtualizarStatusOcorrenciaRequest request,
+        CancellationToken cancellationToken)
+    {
+        var detalhe = await _ocorrenciaService.AtualizarStatusAsync(id, request.NovoStatus, cancellationToken);
+        return Ok(detalhe);
+    }
+
     private async Task<string?> MaterializarFotoUrlSeBase64Async(string? fotoInput, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(fotoInput))

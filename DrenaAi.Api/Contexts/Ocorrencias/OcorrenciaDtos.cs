@@ -195,3 +195,12 @@ public record PriorizarFilaResponse(
     string Mensagem,
     IReadOnlyList<OcorrenciaResumoResponse> Fila
 );
+
+/// <summary>
+/// Dados de entrada do webhook ou rota administrativa de atualização de status de uma ocorrência.
+/// </summary>
+/// <param name="NovoStatus">Novo status a ser atribuído (VALIDADA, NA_FILA, EM_ATENDIMENTO ou CONCLUIDA).</param>
+public record AtualizarStatusOcorrenciaRequest(
+    [Required(ErrorMessage = "O novo status da ocorrência é obrigatório.")]
+    StatusOcorrencia NovoStatus
+);

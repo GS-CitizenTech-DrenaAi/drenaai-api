@@ -191,10 +191,13 @@ public class Ocorrencia
     /// Atualiza o status da ocorrência e adiciona automaticamente um registro na linha do tempo.
     /// </summary>
     /// <param name="novoStatus">Novo status a ser atribuído à ocorrência.</param>
-    public void AtualizarStatus(StatusOcorrencia novoStatus)
+    /// <returns>Registro de histórico criado para esta transição de status.</returns>
+    public HistoricoStatus AtualizarStatus(StatusOcorrencia novoStatus)
     {
         Status = novoStatus;
-        HistoricoStatus.Add(new HistoricoStatus(Id, novoStatus));
+        var registroHistorico = new HistoricoStatus(Id, novoStatus);
+        HistoricoStatus.Add(registroHistorico);
+        return registroHistorico;
     }
 
     /// <summary>
