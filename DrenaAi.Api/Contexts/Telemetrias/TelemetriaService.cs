@@ -64,8 +64,8 @@ public class TelemetriaService : ITelemetriaService
                 Mensagem: "Telemetria recebida dentro dos parâmetros normais.");
         }
 
-        var (bairro, latitude, longitude) = ResolverLocalizacaoBueiro(request.BueiroId);
-        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(bairro, cancellationToken);
+        var localizacao = ResolverLocalizacaoBueiro(request.BueiroId);
+        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(localizacao.Bairro, cancellationToken);
         var ipc = _calculadoraIpc.CalcularIpc(severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
 
         var descricao = $"Alerta automático IoT ({request.SensorId.Trim()}) no bueiro {request.BueiroId.Trim()}: " +
@@ -76,9 +76,7 @@ public class TelemetriaService : ITelemetriaService
             "OBSTRUCAO_BUEIRO",
             descricao,
             fotoUrl: null,
-            latitude,
-            longitude,
-            bairro,
+            localizacao,
             severidade,
             ipc,
             usuarioId: null);
@@ -90,7 +88,7 @@ public class TelemetriaService : ITelemetriaService
             "Telemetria crítica do sensor {SensorId} gerou ocorrência {OcorrenciaId} no bairro {Bairro} com IPC {Ipc}.",
             request.SensorId,
             ocorrencia.Id,
-            bairro,
+            localizacao.Bairro,
             ipc);
 
         return new TelemetriaResponse(
@@ -101,19 +99,19 @@ public class TelemetriaService : ITelemetriaService
             Mensagem: "Telemetria crítica processada e ocorrência aberta na fila.");
     }
 
-    private static (string Bairro, double Latitude, double Longitude) ResolverLocalizacaoBueiro(string bueiroId)
+    private static Endereco ResolverLocalizacaoBueiro(string bueiroId)
     {
         var idUpper = bueiroId.Trim().ToUpperInvariant();
 
         if (idUpper.Contains("VM"))
-            return ("Vila Mariana", -23.589, -46.634);
+            return new Endereco("Rua Domingos de Morais, 2564", "Vila Mariana", -23.589, -46.634);
 
         if (idUpper.Contains("PI"))
-            return ("Pinheiros", -23.561, -46.701);
+            return new Endereco("Rua dos Pinheiros, 498", "Pinheiros", -23.561, -46.701);
 
         if (idUpper.Contains("MO"))
-            return ("Mooca", -23.556, -46.599);
+            return new Endereco("Rua da Mooca, 1800", "Mooca", -23.556, -46.599);
 
-        return ("Centro", -23.550, -46.633);
+        return new Endereco("Praça da Bandeira, 40", "Vale do Anhangabaú", -23.5493, -46.6391);
     }
 }

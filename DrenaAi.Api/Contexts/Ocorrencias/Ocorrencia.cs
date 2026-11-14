@@ -24,7 +24,7 @@ public class Ocorrencia
     public OrigemOcorrencia Origem { get; private set; }
 
     /// <summary>
-    /// Categoria ou tipo da ocorrência (ex.: BUEIRO_ENTUPIDO, OBSTRUCAO_BUEIRO, LIXO_ACUMULADO).
+    /// Categoria ou tipo da ocorrência (ex.: BUEIRO_ENTUPIDO, ENTULHO, SACOS_LIXO).
     /// </summary>
     [Required]
     [MaxLength(80)]
@@ -46,24 +46,34 @@ public class Ocorrencia
     public string? FotoUrl { get; private set; }
 
     /// <summary>
-    /// Coordenada de latitude do local da ocorrência.
-    /// </summary>
-    [Column("LATITUDE")]
-    public double Latitude { get; private set; }
-
-    /// <summary>
-    /// Coordenada de longitude do local da ocorrência.
-    /// </summary>
-    [Column("LONGITUDE")]
-    public double Longitude { get; private set; }
-
-    /// <summary>
-    /// Nome do bairro derivado da localização da ocorrência.
+    /// Value Object contendo o endereço postal (logradouro, bairro) e as coordenadas geográficas da ocorrência.
     /// </summary>
     [Required]
-    [MaxLength(100)]
-    [Column("BAIRRO")]
-    public string Bairro { get; private set; } = string.Empty;
+    public Endereco Localizacao { get; private set; } = null!;
+
+    /// <summary>
+    /// Atalho de leitura para o logradouro do Value Object <see cref="Localizacao"/>.
+    /// </summary>
+    [NotMapped]
+    public string Logradouro => Localizacao?.Logradouro ?? string.Empty;
+
+    /// <summary>
+    /// Atalho de leitura para a latitude geográfica do Value Object <see cref="Localizacao"/>.
+    /// </summary>
+    [NotMapped]
+    public double Latitude => Localizacao?.Latitude ?? 0.0;
+
+    /// <summary>
+    /// Atalho de leitura para a longitude geográfica do Value Object <see cref="Localizacao"/>.
+    /// </summary>
+    [NotMapped]
+    public double Longitude => Localizacao?.Longitude ?? 0.0;
+
+    /// <summary>
+    /// Atalho de leitura para o nome do bairro do Value Object <see cref="Localizacao"/>.
+    /// </summary>
+    [NotMapped]
+    public string Bairro => Localizacao?.Bairro ?? string.Empty;
 
     /// <summary>
     /// Grau de severidade da ocorrência normalizado na escala de 0.0 a 1.0.
@@ -107,6 +117,39 @@ public class Ocorrencia
     protected Ocorrencia() { }
 
     /// <summary>
+    /// Inicializa uma nova instância de <see cref="Ocorrencia"/> recebendo o Value Object <see cref="Endereco"/>.
+    /// </summary>
+    /// <param name="origem">Origem da ocorrência (APP ou SENSOR).</param>
+    /// <param name="tipo">Tipo da ocorrência reportada.</param>
+    /// <param name="descricaoSanitizada">Texto descritivo livre de dados pessoais (PII).</param>
+    /// <param name="fotoUrl">URL da foto da denúncia, caso exista.</param>
+    /// <param name="localizacao">Value Object contendo logradouro, bairro, latitude e longitude.</param>
+    /// <param name="severidade">Severidade avaliada entre 0.0 e 1.0.</param>
+    /// <param name="ipc">Índice de Prioridade de Coleta inicial entre 0.0 e 1.0.</param>
+    /// <param name="usuarioId">Identificador opcional do morador autor da denúncia.</param>
+    public Ocorrencia(
+        OrigemOcorrencia origem,
+        string tipo,
+        string descricaoSanitizada,
+        string? fotoUrl,
+        Endereco localizacao,
+        double severidade,
+        double ipc,
+        Guid? usuarioId = null)
+    {
+        Origem = origem;
+        Tipo = tipo;
+        Descricao = descricaoSanitizada;
+        FotoUrl = fotoUrl;
+        Localizacao = localizacao;
+        Severidade = Math.Clamp(severidade, 0.0, 1.0);
+        Ipc = Math.Clamp(ipc, 0.0, 1.0);
+        UsuarioId = usuarioId;
+
+        AtualizarStatus(StatusOcorrencia.NA_FILA);
+    }
+
+    /// <summary>
     /// Inicializa uma nova instância de <see cref="Ocorrencia"/> aplicando limites seguros de severidade e IPC.
     /// </summary>
     /// <param name="origem">Origem da ocorrência (APP ou SENSOR).</param>
@@ -119,6 +162,7 @@ public class Ocorrencia
     /// <param name="severidade">Severidade avaliada entre 0.0 e 1.0.</param>
     /// <param name="ipc">Índice de Prioridade de Coleta inicial entre 0.0 e 1.0.</param>
     /// <param name="usuarioId">Identificador opcional do morador autor da denúncia.</param>
+    /// <param name="logradouro">Logradouro opcional da ocorrência.</param>
     public Ocorrencia(
         OrigemOcorrencia origem,
         string tipo,
@@ -129,20 +173,18 @@ public class Ocorrencia
         string bairro,
         double severidade,
         double ipc,
-        Guid? usuarioId = null)
+        Guid? usuarioId = null,
+        string? logradouro = null)
+        : this(
+            origem,
+            tipo,
+            descricaoSanitizada,
+            fotoUrl,
+            new Endereco(logradouro, bairro, latitude, longitude),
+            severidade,
+            ipc,
+            usuarioId)
     {
-        Origem = origem;
-        Tipo = tipo;
-        Descricao = descricaoSanitizada;
-        FotoUrl = fotoUrl;
-        Latitude = latitude;
-        Longitude = longitude;
-        Bairro = bairro;
-        Severidade = Math.Clamp(severidade, 0.0, 1.0);
-        Ipc = Math.Clamp(ipc, 0.0, 1.0);
-        UsuarioId = usuarioId;
-
-        AtualizarStatus(StatusOcorrencia.NA_FILA);
     }
 
     /// <summary>

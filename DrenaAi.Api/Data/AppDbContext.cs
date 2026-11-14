@@ -52,6 +52,29 @@ public class AppDbContext : DbContext
                 .HasConversion<string>()
                 .HasMaxLength(30);
 
+            entity.OwnsOne(o => o.Localizacao, endereco =>
+            {
+                endereco.Property(e => e.Logradouro)
+                    .HasColumnName("ENDERECO")
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                endereco.Property(e => e.Bairro)
+                    .HasColumnName("BAIRRO")
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                endereco.Property(e => e.Latitude)
+                    .HasColumnName("LATITUDE")
+                    .IsRequired();
+
+                endereco.Property(e => e.Longitude)
+                    .HasColumnName("LONGITUDE")
+                    .IsRequired();
+            });
+
+            entity.Navigation(o => o.Localizacao).IsRequired();
+
             entity.HasMany(o => o.HistoricoStatus)
                 .WithOne()
                 .HasForeignKey(h => h.OcorrenciaId)

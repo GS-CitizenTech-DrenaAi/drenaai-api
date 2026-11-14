@@ -19,6 +19,7 @@ public class IntegracaoIaMockService : IIntegracaoIaService
         AvaliarSeveridadeResponse resposta;
         if (fotoLower.Contains("bueiro_obstruido_critico") ||
             fotoLower.Contains("foto_bueiro") ||
+            fotoLower.Contains("bueiro_entupido") ||
             fotoLower.Contains("cenario_a") ||
             fotoLower.Contains("critico") ||
             fotoLower.Contains("cheio"))
@@ -31,12 +32,37 @@ public class IntegracaoIaMockService : IIntegracaoIaService
         }
         else if (fotoLower.Contains("cenario_b") ||
                  fotoLower.Contains("medio") ||
-                 fotoLower.Contains("leve"))
+                 fotoLower.Contains("leve") ||
+                 fotoLower.Contains("movel_volumoso"))
         {
             resposta = new AvaliarSeveridadeResponse(
                 0.50,
                 0.88,
                 "Acúmulo moderado de resíduos próximo à sarjeta."
+            );
+        }
+        else if (fotoLower.Contains("entulho"))
+        {
+            resposta = new AvaliarSeveridadeResponse(
+                0.70,
+                0.89,
+                "Restos de obra perto da sarjeta podem ser levados pela chuva até o bueiro."
+            );
+        }
+        else if (fotoLower.Contains("lixo_organico"))
+        {
+            resposta = new AvaliarSeveridadeResponse(
+                0.55,
+                0.86,
+                "Lixo orgânico espalhado na rua, que a enxurrada pode arrastar."
+            );
+        }
+        else if (fotoLower.Contains("sacos_lixo"))
+        {
+            resposta = new AvaliarSeveridadeResponse(
+                0.45,
+                0.84,
+                "Sacos de lixo na calçada, que podem rasgar e entupir a sarjeta."
             );
         }
         else
@@ -62,12 +88,15 @@ public class IntegracaoIaMockService : IIntegracaoIaService
         var bairroLower = bairroNormalizado.ToLowerInvariant();
 
         PrevisaoRiscoResponse resposta;
-        if (bairroLower.Contains("vila mariana") || bairroLower.Contains("cenario a") || bairroLower.Contains("cenário a"))
+        if (bairroLower.Contains("anhangaba") ||
+            bairroLower.Contains("vila mariana") ||
+            bairroLower.Contains("cenario a") ||
+            bairroLower.Contains("cenário a"))
         {
             resposta = new PrevisaoRiscoResponse(
                 bairroNormalizado,
                 ChuvaMm12h: 35.0,
-                ChuvaMm24h: 55.0,
+                ChuvaMm24h: 41.0,
                 RiscoAlagamento: 0.85,
                 VulnerabilidadeVia: 0.90
             );

@@ -45,10 +45,26 @@ public class OcorrenciaService : IOcorrenciaService
         Guid usuarioId,
         CancellationToken cancellationToken = default)
     {
-        var descricaoSanitizada = _piiSanitizer.Sanitizar(request.Descricao);
+        var descricaoSanitizada = _piiSanitizer.Sanitizar(request.Descricao ?? string.Empty);
 
-        var avaliacaoFoto = await _integracaoIa.AvaliarSeveridadeAsync(request.FotoUrl, cancellationToken);
-        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(request.Bairro, cancellationToken);
+        var localizacao = request.Endereco is not null
+            ? new Endereco(
+                request.Endereco.Logradouro,
+                request.Endereco.Bairro,
+                request.Endereco.Latitude,
+                request.Endereco.Longitude)
+            : new Endereco(
+                logradouro: null,
+                bairro: request.Bairro,
+                latitude: request.Latitude,
+                longitude: request.Longitude);
+
+        var referenciaFotoOuTipo = string.IsNullOrWhiteSpace(request.FotoUrl)
+            ? request.Tipo
+            : $"{request.FotoUrl}|{request.Tipo}";
+
+        var avaliacaoFoto = await _integracaoIa.AvaliarSeveridadeAsync(referenciaFotoOuTipo, cancellationToken);
+        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(localizacao.Bairro, cancellationToken);
 
         var ipc = _calculadoraIpc.CalcularIpc(
             avaliacaoFoto.Severidade,
@@ -60,9 +76,7 @@ public class OcorrenciaService : IOcorrenciaService
             request.Tipo.Trim(),
             descricaoSanitizada,
             request.FotoUrl,
-            request.Latitude,
-            request.Longitude,
-            request.Bairro.Trim(),
+            localizacao,
             avaliacaoFoto.Severidade,
             ipc,
             usuarioId);
@@ -70,9 +84,13 @@ public class OcorrenciaService : IOcorrenciaService
         _context.Ocorrencias.Add(ocorrencia);
         await _context.SaveChangesAsync(cancellationToken);
 
+        var posicaoFila = await CalcularPosicaoNaFilaAsync(ocorrencia.Id, localizacao.Bairro, cancellationToken);
+        var parcelas = CalcularParcelasIpc(avaliacaoFoto.Severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
+
         _logger.LogInformation(
-            "Ocorrência {OcorrenciaId} registrada no bairro {Bairro} com IPC {Ipc}.",
+            "Ocorrência {OcorrenciaId} registrada em {Logradouro} ({Bairro}) com IPC {Ipc}.",
             ocorrencia.Id,
+            ocorrencia.Logradouro,
             ocorrencia.Bairro,
             ocorrencia.Ipc);
 
@@ -81,7 +99,14 @@ public class OcorrenciaService : IOcorrenciaService
             ocorrencia.Severidade,
             ocorrencia.Ipc,
             ocorrencia.Status.ToString(),
-            ocorrencia.Descricao);
+            ocorrencia.Descricao,
+            ocorrencia.FotoUrl,
+            MapearEnderecoVo(ocorrencia.Localizacao),
+            avaliacaoFoto.Confianca,
+            avaliacaoFoto.Justificativa,
+            parcelas,
+            posicaoFila,
+            ocorrencia.CriadaEm);
     }
 
     /// <inheritdoc />
@@ -95,7 +120,7 @@ public class OcorrenciaService : IOcorrenciaService
         if (!string.IsNullOrWhiteSpace(bairro))
         {
             var bairroNorm = bairro.Trim().ToLowerInvariant();
-            query = query.Where(o => o.Bairro.ToLower() == bairroNorm);
+            query = query.Where(o => o.Localizacao.Bairro.ToLower() == bairroNorm);
         }
 
         if (status.HasValue)
@@ -108,7 +133,9 @@ public class OcorrenciaService : IOcorrenciaService
             .ThenBy(o => o.CriadaEm)
             .ToListAsync(cancellationToken);
 
-        return ocorrencias.Select(MapearResumo).ToList();
+        return ocorrencias
+            .Select((o, idx) => MapearResumo(o, o.Status != StatusOcorrencia.CONCLUIDA ? idx + 1 : null))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -130,6 +157,17 @@ public class OcorrenciaService : IOcorrenciaService
             .Select(h => new HistoricoStatusItemResponse(h.Status.ToString(), h.DataHora))
             .ToList();
 
+        var referenciaFotoOuTipo = string.IsNullOrWhiteSpace(ocorrencia.FotoUrl)
+            ? ocorrencia.Tipo
+            : $"{ocorrencia.FotoUrl}|{ocorrencia.Tipo}";
+
+        var avaliacaoFoto = await _integracaoIa.AvaliarSeveridadeAsync(referenciaFotoOuTipo, cancellationToken);
+        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(ocorrencia.Bairro, cancellationToken);
+        var parcelas = CalcularParcelasIpc(ocorrencia.Severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
+        var posicaoFila = ocorrencia.Status != StatusOcorrencia.CONCLUIDA
+            ? await CalcularPosicaoNaFilaAsync(ocorrencia.Id, ocorrencia.Bairro, cancellationToken)
+            : null;
+
         return new OcorrenciaDetalheResponse(
             ocorrencia.Id,
             ocorrencia.Origem.ToString(),
@@ -143,7 +181,14 @@ public class OcorrenciaService : IOcorrenciaService
             ocorrencia.Ipc,
             ocorrencia.Status.ToString(),
             ocorrencia.CriadaEm,
-            historicoOrdenado);
+            historicoOrdenado,
+            MapearEnderecoVo(ocorrencia.Localizacao),
+            avaliacaoFoto.Confianca,
+            avaliacaoFoto.Justificativa,
+            parcelas,
+            posicaoFila,
+            Confirmacoes: 0,
+            ocorrencia.UsuarioId);
     }
 
     /// <inheritdoc />
@@ -158,7 +203,7 @@ public class OcorrenciaService : IOcorrenciaService
         if (!string.IsNullOrWhiteSpace(bairro))
         {
             var bairroNorm = bairro.Trim().ToLowerInvariant();
-            query = query.Where(o => o.Bairro.ToLower() == bairroNorm);
+            query = query.Where(o => o.Localizacao.Bairro.ToLower() == bairroNorm);
         }
 
         var fila = await query
@@ -166,7 +211,7 @@ public class OcorrenciaService : IOcorrenciaService
             .ThenBy(o => o.CriadaEm)
             .ToListAsync(cancellationToken);
 
-        return fila.Select(MapearResumo).ToList();
+        return fila.Select((o, index) => MapearResumo(o, index + 1)).ToList();
     }
 
     /// <inheritdoc />
@@ -205,7 +250,39 @@ public class OcorrenciaService : IOcorrenciaService
             Fila: filaAtualizada);
     }
 
-    private static OcorrenciaResumoResponse MapearResumo(Ocorrencia o) => new(
+    private async Task<int?> CalcularPosicaoNaFilaAsync(
+        Guid ocorrenciaId,
+        string bairro,
+        CancellationToken cancellationToken)
+    {
+        var bairroNorm = bairro.Trim().ToLowerInvariant();
+        var idsOrdenados = await _context.Ocorrencias
+            .AsNoTracking()
+            .Where(o => o.Status != StatusOcorrencia.CONCLUIDA && o.Localizacao.Bairro.ToLower() == bairroNorm)
+            .OrderByDescending(o => o.Ipc)
+            .ThenBy(o => o.CriadaEm)
+            .Select(o => o.Id)
+            .ToListAsync(cancellationToken);
+
+        var indice = idsOrdenados.IndexOf(ocorrenciaId);
+        return indice >= 0 ? indice + 1 : null;
+    }
+
+    private static ParcelasIpcVo CalcularParcelasIpc(double severidade, double chuvaMm12h, double vulnerabilidadeVia)
+    {
+        var s = Math.Round(0.4 * Math.Clamp(severidade, 0.0, 1.0), 2);
+        var c = Math.Round(0.3 * Math.Clamp(chuvaMm12h / 50.0, 0.0, 1.0), 2);
+        var v = Math.Round(0.3 * Math.Clamp(vulnerabilidadeVia, 0.0, 1.0), 2);
+        return new ParcelasIpcVo(s, c, v);
+    }
+
+    private static EnderecoVo MapearEnderecoVo(Endereco localizacao) => new(
+        localizacao.Logradouro,
+        localizacao.Bairro,
+        localizacao.Latitude,
+        localizacao.Longitude);
+
+    private static OcorrenciaResumoResponse MapearResumo(Ocorrencia o, int? posicaoFila = null) => new(
         o.Id,
         o.Origem.ToString(),
         o.Tipo,
@@ -214,5 +291,8 @@ public class OcorrenciaService : IOcorrenciaService
         o.Severidade,
         o.Ipc,
         o.Status.ToString(),
-        o.CriadaEm);
+        o.CriadaEm,
+        MapearEnderecoVo(o.Localizacao),
+        o.FotoUrl,
+        posicaoFila);
 }

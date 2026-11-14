@@ -57,12 +57,6 @@ namespace DrenaAi.Api.Data.Migrations
                         .HasColumnType("RAW(16)")
                         .HasColumnName("ID_OCORRENCIA");
 
-                    b.Property<string>("Bairro")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("NVARCHAR2(100)")
-                        .HasColumnName("BAIRRO");
-
                     b.Property<DateTime>("CriadaEm")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("CRIADA_EM");
@@ -81,14 +75,6 @@ namespace DrenaAi.Api.Data.Migrations
                     b.Property<double>("Ipc")
                         .HasColumnType("BINARY_DOUBLE")
                         .HasColumnName("IPC");
-
-                    b.Property<double>("Latitude")
-                        .HasColumnType("BINARY_DOUBLE")
-                        .HasColumnName("LATITUDE");
-
-                    b.Property<double>("Longitude")
-                        .HasColumnType("BINARY_DOUBLE")
-                        .HasColumnName("LONGITUDE");
 
                     b.Property<string>("Origem")
                         .IsRequired()
@@ -164,6 +150,45 @@ namespace DrenaAi.Api.Data.Migrations
                         .WithMany("HistoricoStatus")
                         .HasForeignKey("OcorrenciaId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DrenaAi.Api.Contexts.Ocorrencias.Ocorrencia", b =>
+                {
+                    b.OwnsOne("DrenaAi.Api.Contexts.Ocorrencias.Endereco", "Localizacao", b1 =>
+                        {
+                            b1.Property<Guid>("OcorrenciaId")
+                                .HasColumnType("RAW(16)");
+
+                            b1.Property<string>("Bairro")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("NVARCHAR2(100)")
+                                .HasColumnName("BAIRRO");
+
+                            b1.Property<double>("Latitude")
+                                .HasColumnType("BINARY_DOUBLE")
+                                .HasColumnName("LATITUDE");
+
+                            b1.Property<string>("Logradouro")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("NVARCHAR2(200)")
+                                .HasColumnName("ENDERECO");
+
+                            b1.Property<double>("Longitude")
+                                .HasColumnType("BINARY_DOUBLE")
+                                .HasColumnName("LONGITUDE");
+
+                            b1.HasKey("OcorrenciaId");
+
+                            b1.ToTable("TB_DRENA_OCORRENCIA");
+
+                            b1.WithOwner()
+                                .HasForeignKey("OcorrenciaId");
+                        });
+
+                    b.Navigation("Localizacao")
                         .IsRequired();
                 });
 

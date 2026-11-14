@@ -197,4 +197,46 @@ public class OcorrenciaServiceTests
         fila[1].Id.Should().Be(segunda.Id);
         fila[0].CriadaEm.Should().BeBefore(fila[1].CriadaEm);
     }
+
+    /// <summary>
+    /// Deve persistir e retornar o Value Object EnderecoVo e as parcelas do IPC ao criar ocorrência no Vale do Anhangabaú.
+    /// </summary>
+    [Fact]
+    public async Task CriarAsync_DevePersistirValueObjectEnderecoECalcularParcelasIpc_NoValeDoAnhangabau()
+    {
+        // Arrange
+        await using var context = CriarDbContextEmMemoria();
+        var service = CriarService(context);
+        var usuarioId = Guid.NewGuid();
+        var enderecoVo = new EnderecoVo(
+            Logradouro: "Rua Formosa, 95",
+            Bairro: "Vale do Anhangabaú",
+            Latitude: -23.5461,
+            Longitude: -46.6388);
+
+        var request = new CriarOcorrenciaRequest(
+            Tipo: "ENTULHO",
+            Descricao: null,
+            FotoUrl: "http://localhost:5239/uploads/oc-teste.jpg",
+            Latitude: enderecoVo.Latitude,
+            Longitude: enderecoVo.Longitude,
+            Bairro: enderecoVo.Bairro,
+            Endereco: enderecoVo);
+
+        // Act
+        var criada = await service.CriarAsync(request, usuarioId);
+        var detalhe = await service.ObterPorIdAsync(criada.Id);
+
+        // Assert
+        criada.Endereco.Should().NotBeNull();
+        criada.Endereco!.Logradouro.Should().Be("Rua Formosa, 95");
+        criada.Endereco.Bairro.Should().Be("Vale do Anhangabaú");
+        criada.ParcelasIpc.Should().NotBeNull();
+        criada.PosicaoFila.Should().Be(1);
+
+        detalhe.Endereco.Should().NotBeNull();
+        detalhe.Endereco!.Logradouro.Should().Be("Rua Formosa, 95");
+        detalhe.Latitude.Should().Be(-23.5461);
+        detalhe.Longitude.Should().Be(-46.6388);
+    }
 }
