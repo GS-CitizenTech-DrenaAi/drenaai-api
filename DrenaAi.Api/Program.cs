@@ -65,7 +65,9 @@ builder.Services.Configure<IaServicesSettings>(builder.Configuration.GetSection(
 builder.Services.Configure<DeviceAuthSettings>(builder.Configuration.GetSection("DeviceAuth"));
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseOracle(builder.Configuration.GetConnectionString("OracleConnection")));
+    options.UseOracle(
+        builder.Configuration.GetConnectionString("OracleConnection"),
+        oracleOptions => oracleOptions.UseOracleSQLCompatibility(OracleSQLCompatibility.DatabaseVersion19)));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOcorrenciaService, OcorrenciaService>();

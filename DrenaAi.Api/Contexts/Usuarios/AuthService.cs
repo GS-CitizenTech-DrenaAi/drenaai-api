@@ -39,7 +39,8 @@ public class AuthService : IAuthService
         var emailNormalizado = request.Email.Trim().ToLowerInvariant();
 
         var emailJaExiste = await _context.Usuarios
-            .AnyAsync(u => u.Email == emailNormalizado);
+            .AsNoTracking()
+            .CountAsync(u => u.Email == emailNormalizado) > 0;
 
         if (emailJaExiste)
             throw new DomainException("O e-mail informado já está cadastrado.");
