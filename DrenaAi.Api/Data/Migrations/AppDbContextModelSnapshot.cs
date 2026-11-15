@@ -57,6 +57,10 @@ namespace DrenaAi.Api.Data.Migrations
                         .HasColumnType("RAW(16)")
                         .HasColumnName("ID_OCORRENCIA");
 
+                    b.Property<int>("Confirmacoes")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("CONFIRMACOES");
+
                     b.Property<DateTime>("CriadaEm")
                         .HasColumnType("TIMESTAMP(7)")
                         .HasColumnName("CRIADA_EM");

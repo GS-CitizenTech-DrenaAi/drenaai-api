@@ -80,6 +80,7 @@ O controle de versão do esquema do banco de dados está estruturado em `DrenaAi
 * `InitialCreate`: criação das tabelas iniciais de usuários, ocorrências e histórico de status.
 * `AddEnderecoValueObject`: evolução do esquema para persistência do Value Object `Endereco` na tabela de ocorrências.
 * `AddTabelaSensorBueiro`: criação da tabela `TB_DRENA_SENSOR_BUEIRO` para persistência dos bueiros monitorados por sensores IoT e suas últimas leituras.
+* `AddConfirmacoesOcorrencia`: adição da coluna `CONFIRMACOES` em `TB_DRENA_OCORRENCIA` para consolidação de denúncias no mesmo local.
 
 ### Programação Assíncrona (Async/Await)
 Toda a cadeia de I/O — das ações nos Controllers até os Services, consultas do Entity Framework Core (`ToListAsync`, `FirstOrDefaultAsync`, `AnyAsync`, `SaveChangesAsync`) e requisições HTTP externas — utiliza `async`/`await` com propagação de `CancellationToken`.

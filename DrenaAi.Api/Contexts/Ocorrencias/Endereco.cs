@@ -57,4 +57,49 @@ public class Endereco
         Latitude = Math.Clamp(latitude, -90.0, 90.0);
         Longitude = Math.Clamp(longitude, -180.0, 180.0);
     }
+
+    /// <summary>
+    /// Verifica se outro endereço representa o mesmo local físico (mesmo logradouro/bairro ou dentro do raio informado).
+    /// </summary>
+    /// <param name="outro">Outro endereço para comparação.</param>
+    /// <param name="raioMetros">Raio máximo em metros para considerar proximidade geográfica.</param>
+    /// <returns>Verdadeiro caso ambos representem o mesmo local.</returns>
+    public bool MesmoLocal(Endereco? outro, double raioMetros = 50.0)
+    {
+        if (outro is null)
+            return false;
+
+        var mesmoBairro = string.Equals(Bairro.Trim(), outro.Bairro.Trim(), StringComparison.OrdinalIgnoreCase);
+        var logradouroEspecifico =
+            !string.Equals(Logradouro.Trim(), "Local marcado no mapa", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(outro.Logradouro.Trim(), "Local marcado no mapa", StringComparison.OrdinalIgnoreCase);
+
+        if (mesmoBairro && logradouroEspecifico &&
+            string.Equals(Logradouro.Trim(), outro.Logradouro.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return DistanciaMetros(outro) <= raioMetros;
+    }
+
+    /// <summary>
+    /// Calcula a distância aproximada em metros entre dois pontos geográficos usando a fórmula de Haversine.
+    /// </summary>
+    /// <param name="outro">Endereço de destino para o cálculo.</param>
+    /// <returns>Distância em metros.</returns>
+    public double DistanciaMetros(Endereco outro)
+    {
+        const double raioTerraMetros = 6371000.0;
+        var dLat = (outro.Latitude - Latitude) * Math.PI / 180.0;
+        var dLon = (outro.Longitude - Longitude) * Math.PI / 180.0;
+        var lat1 = Latitude * Math.PI / 180.0;
+        var lat2 = outro.Latitude * Math.PI / 180.0;
+
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+
+        return 2 * raioTerraMetros * Math.Asin(Math.Min(1.0, Math.Sqrt(a)));
+    }
 }

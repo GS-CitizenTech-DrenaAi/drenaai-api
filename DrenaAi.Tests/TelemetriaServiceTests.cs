@@ -158,4 +158,40 @@ public class TelemetriaServiceTests
         // Assert
         await act.Should().ThrowAsync<NotFoundException>();
     }
+
+    /// <summary>
+    /// Deve atualizar a mesma ocorrência ativa sem duplicar na fila e sem incrementar confirmações de vizinhos
+    /// quando o mesmo sensor enviar leituras críticas consecutivas.
+    /// </summary>
+    [Fact]
+    public async Task ReceberTelemetriaAsync_DeveAtualizarMesmaOcorrenciaSemSomarConfirmacoes_QuandoLeiturasCriticasSeRepetirem()
+    {
+        // Arrange
+        await using var context = CriarDbContextEmMemoria();
+        var (telemetriaService, ocorrenciaService) = CriarServicos(context);
+
+        var sensor = await telemetriaService.CadastrarSensorAsync(new CadastrarSensorRequest(
+            Logradouro: "Praça da Bandeira, 40",
+            Bairro: "Vale do Anhangabaú",
+            Latitude: -23.5493,
+            Longitude: -46.6391,
+            CodigoSensor: "B-01",
+            DistanciaCm: 10.0,
+            GasPpm: 450.0));
+
+        // Act: segunda leitura crítica do mesmo sensor
+        var segundaResposta = await telemetriaService.ReceberTelemetriaAsync(new TelemetriaRequest(
+            BueiroId: sensor.Id,
+            DistanciaCm: 4.5,
+            GasPpm: 600.0));
+
+        var fila = await ocorrenciaService.ObterFilaAsync("Vale do Anhangabaú");
+        var detalhe = await ocorrenciaService.ObterPorIdAsync(segundaResposta.OcorrenciaId!.Value);
+
+        // Assert
+        fila.Should().ContainSingle();
+        segundaResposta.OcorrenciaId.Should().Be(sensor.OcorrenciaId);
+        detalhe.Confirmacoes.Should().Be(0);
+        detalhe.Descricao.Should().Contain("precisa de coleta");
+    }
 }

@@ -71,6 +71,7 @@ public record CriarOcorrenciaRequest(
 /// <param name="ParcelasIpc">Decomposição das parcelas S, C e V do IPC.</param>
 /// <param name="PosicaoFila">Posição atual da ocorrência na fila de coleta do bairro.</param>
 /// <param name="CriadaEm">Data e hora (UTC) de criação do registro.</param>
+/// <param name="Confirmacoes">Quantidade de confirmações comunitárias recebidas de moradores.</param>
 public record CriarOcorrenciaResponse(
     Guid Id,
     double Severidade,
@@ -83,7 +84,8 @@ public record CriarOcorrenciaResponse(
     string? Justificativa = null,
     ParcelasIpcVo? ParcelasIpc = null,
     int? PosicaoFila = null,
-    DateTime? CriadaEm = null
+    DateTime? CriadaEm = null,
+    int Confirmacoes = 0
 );
 
 /// <summary>
@@ -101,6 +103,7 @@ public record CriarOcorrenciaResponse(
 /// <param name="Endereco">Value Object contendo o endereço completo e coordenadas.</param>
 /// <param name="FotoUrl">URL da foto associada à ocorrência.</param>
 /// <param name="PosicaoFila">Posição atual na fila de coleta.</param>
+/// <param name="Confirmacoes">Quantidade de confirmações comunitárias recebidas de moradores.</param>
 public record OcorrenciaResumoResponse(
     Guid Id,
     string Origem,
@@ -113,7 +116,8 @@ public record OcorrenciaResumoResponse(
     DateTime CriadaEm,
     EnderecoVo? Endereco = null,
     string? FotoUrl = null,
-    int? PosicaoFila = null
+    int? PosicaoFila = null,
+    int Confirmacoes = 0
 );
 
 /// <summary>

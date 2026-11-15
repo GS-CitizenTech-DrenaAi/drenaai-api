@@ -53,4 +53,13 @@ public class HistoricoStatus
         Status = status;
         DataHora = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Atualiza a data e hora do registro de histórico quando a leitura do sensor ou ocorrência é renovada.
+    /// </summary>
+    /// <param name="novaDataHora">Nova data e hora em UTC.</param>
+    public void AtualizarDataHora(DateTime novaDataHora)
+    {
+        DataHora = novaDataHora;
+    }
 }

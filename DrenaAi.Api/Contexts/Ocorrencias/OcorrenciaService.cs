@@ -71,6 +71,45 @@ public class OcorrenciaService : IOcorrenciaService
             previsaoRisco.ChuvaMm12h,
             previsaoRisco.VulnerabilidadeVia);
 
+        var ocorrenciasAtivas = await _context.Ocorrencias
+            .Where(o => o.Status != StatusOcorrencia.CONCLUIDA)
+            .OrderByDescending(o => o.Ipc)
+            .ThenBy(o => o.CriadaEm)
+            .ToListAsync(cancellationToken);
+
+        var existenteMesmoLocal = ocorrenciasAtivas
+            .FirstOrDefault(o => o.Localizacao.MesmoLocal(localizacao));
+
+        if (existenteMesmoLocal is not null)
+        {
+            existenteMesmoLocal.RegistrarConfirmacaoMorador(request.FotoUrl, avaliacaoFoto.Severidade, ipc);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var posicaoExistente = await CalcularPosicaoNaFilaAsync(existenteMesmoLocal.Id, existenteMesmoLocal.Bairro, cancellationToken);
+            var parcelasExistente = CalcularParcelasIpc(existenteMesmoLocal.Severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
+
+            _logger.LogInformation(
+                "Denúncia consolidada na ocorrência existente {OcorrenciaId} ({Logradouro}). Confirmações: {Confirmacoes}.",
+                existenteMesmoLocal.Id,
+                existenteMesmoLocal.Logradouro,
+                existenteMesmoLocal.Confirmacoes);
+
+            return new CriarOcorrenciaResponse(
+                existenteMesmoLocal.Id,
+                existenteMesmoLocal.Severidade,
+                existenteMesmoLocal.Ipc,
+                existenteMesmoLocal.Status.ToString(),
+                existenteMesmoLocal.Descricao,
+                existenteMesmoLocal.FotoUrl,
+                MapearEnderecoVo(existenteMesmoLocal.Localizacao),
+                avaliacaoFoto.Confianca,
+                avaliacaoFoto.Justificativa,
+                parcelasExistente,
+                posicaoExistente,
+                NormalizarUtc(existenteMesmoLocal.CriadaEm),
+                existenteMesmoLocal.Confirmacoes);
+        }
+
         var ocorrencia = new Ocorrencia(
             OrigemOcorrencia.APP,
             request.Tipo.Trim(),
@@ -106,7 +145,8 @@ public class OcorrenciaService : IOcorrenciaService
             avaliacaoFoto.Justificativa,
             parcelas,
             posicaoFila,
-            NormalizarUtc(ocorrencia.CriadaEm));
+            NormalizarUtc(ocorrencia.CriadaEm),
+            ocorrencia.Confirmacoes);
     }
 
     /// <inheritdoc />
@@ -133,12 +173,13 @@ public class OcorrenciaService : IOcorrenciaService
             .ThenBy(o => o.CriadaEm)
             .ToListAsync(cancellationToken);
 
+        var consolidadas = ConsolidarAtivasPorLocal(ocorrencias);
         var posicaoAtiva = 0;
-        return ocorrencias
-            .Select(o =>
+        return consolidadas
+            .Select(item =>
             {
-                int? posicao = o.Status != StatusOcorrencia.CONCLUIDA ? ++posicaoAtiva : null;
-                return MapearResumo(o, posicao);
+                int? posicao = item.Ocorrencia.Status != StatusOcorrencia.CONCLUIDA ? ++posicaoAtiva : null;
+                return MapearResumo(item.Ocorrencia, posicao, item.ConfirmacoesTotais);
             })
             .ToList();
     }
@@ -192,7 +233,7 @@ public class OcorrenciaService : IOcorrenciaService
             avaliacaoFoto.Justificativa,
             parcelas,
             posicaoFila,
-            Confirmacoes: 0,
+            ocorrencia.Confirmacoes,
             ocorrencia.UsuarioId);
     }
 
@@ -216,7 +257,10 @@ public class OcorrenciaService : IOcorrenciaService
             .ThenBy(o => o.CriadaEm)
             .ToListAsync(cancellationToken);
 
-        return fila.Select((o, index) => MapearResumo(o, index + 1)).ToList();
+        var consolidadas = ConsolidarAtivasPorLocal(fila);
+        return consolidadas
+            .Select((item, index) => MapearResumo(item.Ocorrencia, index + 1, item.ConfirmacoesTotais))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -281,21 +325,61 @@ public class OcorrenciaService : IOcorrenciaService
         return await ObterPorIdAsync(ocorrencia.Id, cancellationToken);
     }
 
+    private static List<(Ocorrencia Ocorrencia, int ConfirmacoesTotais)> ConsolidarAtivasPorLocal(
+        IEnumerable<Ocorrencia> ocorrencias)
+    {
+        var resultado = new List<(Ocorrencia Ocorrencia, int ConfirmacoesTotais)>();
+
+        foreach (var atual in ocorrencias)
+        {
+            if (atual.Status == StatusOcorrencia.CONCLUIDA)
+            {
+                resultado.Add((atual, atual.Confirmacoes));
+                continue;
+            }
+
+            var indiceExistente = resultado.FindIndex(item =>
+                item.Ocorrencia.Status != StatusOcorrencia.CONCLUIDA &&
+                item.Ocorrencia.Localizacao.MesmoLocal(atual.Localizacao));
+
+            if (indiceExistente < 0)
+            {
+                resultado.Add((atual, atual.Confirmacoes));
+                continue;
+            }
+
+            var existente = resultado[indiceExistente];
+
+            // Duplicatas antigas de origem APP somam como confirmação comunitária;
+            // leituras reiteradas do mesmo SENSOR não somam vizinhos, mas preservam o registro mais recente.
+            if (atual.Origem == OrigemOcorrencia.APP)
+            {
+                resultado[indiceExistente] = (existente.Ocorrencia, existente.ConfirmacoesTotais + 1 + atual.Confirmacoes);
+            }
+            else if (atual.CriadaEm > existente.Ocorrencia.CriadaEm)
+            {
+                resultado[indiceExistente] = (atual, existente.ConfirmacoesTotais + atual.Confirmacoes);
+            }
+        }
+
+        return resultado;
+    }
+
     private async Task<int?> CalcularPosicaoNaFilaAsync(
         Guid ocorrenciaId,
         string bairro,
         CancellationToken cancellationToken)
     {
         var bairroNorm = bairro.Trim().ToLowerInvariant();
-        var idsOrdenados = await _context.Ocorrencias
+        var ativas = await _context.Ocorrencias
             .AsNoTracking()
             .Where(o => o.Status != StatusOcorrencia.CONCLUIDA && o.Localizacao.Bairro.ToLower() == bairroNorm)
             .OrderByDescending(o => o.Ipc)
             .ThenBy(o => o.CriadaEm)
-            .Select(o => o.Id)
             .ToListAsync(cancellationToken);
 
-        var indice = idsOrdenados.IndexOf(ocorrenciaId);
+        var consolidadas = ConsolidarAtivasPorLocal(ativas);
+        var indice = consolidadas.FindIndex(item => item.Ocorrencia.Id == ocorrenciaId);
         return indice >= 0 ? indice + 1 : null;
     }
 
@@ -313,7 +397,7 @@ public class OcorrenciaService : IOcorrenciaService
         localizacao.Latitude,
         localizacao.Longitude);
 
-    private static OcorrenciaResumoResponse MapearResumo(Ocorrencia o, int? posicaoFila = null) => new(
+    private static OcorrenciaResumoResponse MapearResumo(Ocorrencia o, int? posicaoFila = null, int? confirmacoes = null) => new(
         o.Id,
         o.Origem.ToString(),
         o.Tipo,
@@ -325,7 +409,8 @@ public class OcorrenciaService : IOcorrenciaService
         NormalizarUtc(o.CriadaEm),
         MapearEnderecoVo(o.Localizacao),
         o.FotoUrl,
-        posicaoFila);
+        posicaoFila,
+        confirmacoes ?? o.Confirmacoes);
 
     private static DateTime NormalizarUtc(DateTime data) =>
         data.Kind == DateTimeKind.Utc

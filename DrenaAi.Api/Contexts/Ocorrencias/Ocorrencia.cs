@@ -107,6 +107,13 @@ public class Ocorrencia
     public Guid? UsuarioId { get; private set; }
 
     /// <summary>
+    /// Quantidade de confirmações comunitárias feitas por moradores para esta ocorrência.
+    /// Leituras reiteradas do mesmo sensor IoT não incrementam este contador.
+    /// </summary>
+    [Column("CONFIRMACOES")]
+    public int Confirmacoes { get; private set; }
+
+    /// <summary>
     /// Coleção com o histórico cronológico de mudanças de status da ocorrência.
     /// </summary>
     public ICollection<HistoricoStatus> HistoricoStatus { get; private set; } = new List<HistoricoStatus>();
@@ -207,5 +214,58 @@ public class Ocorrencia
     public void RecalcularIpc(double novoIpc)
     {
         Ipc = Math.Clamp(novoIpc, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Registra uma confirmação comunitária de morador na ocorrência existente,
+    /// complementando foto ou elevando severidade/IPC quando aplicável.
+    /// </summary>
+    /// <param name="fotoUrl">Foto opcional enviada pelo morador caso a ocorrência ainda não possua imagem.</param>
+    /// <param name="novaSeveridade">Severidade opcional calculada para a nova denúncia.</param>
+    /// <param name="novoIpc">IPC opcional recalculado para a nova denúncia.</param>
+    public void RegistrarConfirmacaoMorador(
+        string? fotoUrl = null,
+        double? novaSeveridade = null,
+        double? novoIpc = null)
+    {
+        Confirmacoes += 1;
+
+        if (string.IsNullOrWhiteSpace(FotoUrl) && !string.IsNullOrWhiteSpace(fotoUrl))
+            FotoUrl = fotoUrl;
+
+        if (novaSeveridade.HasValue && novaSeveridade.Value > Severidade)
+            Severidade = Math.Clamp(novaSeveridade.Value, 0.0, 1.0);
+
+        if (novoIpc.HasValue && novoIpc.Value > Ipc)
+            Ipc = Math.Clamp(novoIpc.Value, 0.0, 1.0);
+    }
+
+    /// <summary>
+    /// Atualiza a ocorrência ativa com uma nova leitura crítica do mesmo sensor IoT,
+    /// renovando a data/hora de registro sem incrementar o contador de confirmações de moradores.
+    /// </summary>
+    /// <param name="descricaoSensor">Descrição atualizada com os dados da última leitura crítica.</param>
+    /// <param name="novaSeveridade">Severidade calculada a partir da leitura atual do sensor.</param>
+    /// <param name="novoIpc">Índice de Prioridade de Coleta recalculado.</param>
+    /// <param name="dataHoraAtualizacao">Data e hora (UTC) da leitura que originou a atualização.</param>
+    public void AtualizarAlertaSensor(
+        string descricaoSensor,
+        double novaSeveridade,
+        double novoIpc,
+        DateTime? dataHoraAtualizacao = null)
+    {
+        if (!string.IsNullOrWhiteSpace(descricaoSensor))
+            Descricao = descricaoSensor;
+
+        Severidade = Math.Clamp(novaSeveridade, 0.0, 1.0);
+        Ipc = Math.Clamp(novoIpc, 0.0, 1.0);
+
+        var instante = dataHoraAtualizacao ?? DateTime.UtcNow;
+        CriadaEm = instante;
+
+        foreach (var item in HistoricoStatus)
+        {
+            item.AtualizarDataHora(instante);
+        }
     }
 }

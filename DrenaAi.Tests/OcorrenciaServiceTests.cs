@@ -178,8 +178,8 @@ public class OcorrenciaServiceTests
             "LIXO_ACUMULADO",
             "Segunda ocorrência registrada",
             "foto2.jpg",
-            -23.55,
-            -46.63,
+            -23.556,
+            -46.599,
             "Mooca",
             severidade: 0.60,
             ipc: 0.60,
@@ -255,7 +255,7 @@ public class OcorrenciaServiceTests
             new CriarOcorrenciaRequest("BUEIRO_ENTUPIDO", "Bueiro entupido", "foto_1.jpg", -23.5461, -46.6388, "Vale do Anhangabaú"),
             usuarioId);
         var segunda = await service.CriarAsync(
-            new CriarOcorrenciaRequest("LIXO_ORGANICO", "Lixo na calçada", "cenario_b.jpg", -23.5465, -46.6390, "Vale do Anhangabaú"),
+            new CriarOcorrenciaRequest("LIXO_ORGANICO", "Lixo na calçada", "cenario_b.jpg", -23.5493, -46.6391, "Vale do Anhangabaú"),
             usuarioId);
 
         // Act - Avança para EM_ATENDIMENTO
@@ -277,5 +277,37 @@ public class OcorrenciaServiceTests
         concluida.HistoricoStatus.Should().HaveCount(3);
         concluida.HistoricoStatus.Select(h => h.Status).Should().ContainInOrder("NA_FILA", "EM_ATENDIMENTO", "CONCLUIDA");
         detalheSegunda.PosicaoFila.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Deve consolidar duas denúncias de moradores no mesmo endereço em uma única ocorrência ativa
+    /// incrementando o contador de confirmações comunitárias.
+    /// </summary>
+    [Fact]
+    public async Task CriarAsync_DeveConsolidarOcorrenciaNoMesmoLocalEIncrementarConfirmacoes()
+    {
+        // Arrange
+        await using var context = CriarDbContextEmMemoria();
+        var service = CriarService(context);
+        var endereco = new EnderecoVo("Praça da Bandeira, 40", "Vale do Anhangabaú", -23.5493, -46.6391);
+
+        var primeira = await service.CriarAsync(
+            new CriarOcorrenciaRequest("BUEIRO_ENTUPIDO", "Bueiro entupido", "foto_1.jpg", Endereco: endereco),
+            Guid.NewGuid());
+
+        // Act
+        var segunda = await service.CriarAsync(
+            new CriarOcorrenciaRequest("BUEIRO_ENTUPIDO", "Ainda está entupido", "foto_2.jpg", Endereco: endereco),
+            Guid.NewGuid());
+
+        var fila = await service.ObterFilaAsync("Vale do Anhangabaú");
+        var detalhe = await service.ObterPorIdAsync(primeira.Id);
+
+        // Assert
+        segunda.Id.Should().Be(primeira.Id);
+        segunda.Confirmacoes.Should().Be(1);
+        fila.Should().ContainSingle();
+        fila[0].Confirmacoes.Should().Be(1);
+        detalhe.Confirmacoes.Should().Be(1);
     }
 }

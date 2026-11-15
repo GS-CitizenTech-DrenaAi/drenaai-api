@@ -53,19 +53,26 @@ public class TelemetriaService : ITelemetriaService
         if (distanciaInicial < 0 || gasInicial < 0)
             throw new DomainException("As leituras iniciais de distância e gás não podem ser negativas.");
 
+        var timestampCadastro = DateTime.UtcNow;
         var localizacao = new Endereco(request.Logradouro, request.Bairro, request.Latitude, request.Longitude);
         var sensor = new SensorBueiro(
             localizacao,
             request.CodigoSensor,
             distanciaInicial,
             gasInicial,
-            DateTime.UtcNow);
+            timestampCadastro);
 
         var (severidade, ehCritico) = AvaliarLeitura(distanciaInicial, gasInicial);
         if (ehCritico)
         {
-            var ocorrencia = await CriarOcorrenciaSensorAsync(sensor, distanciaInicial, gasInicial, severidade, cancellationToken);
-            sensor.RegistrarLeitura(sensor.CodigoSensor, distanciaInicial, gasInicial, DateTime.UtcNow, ocorrencia.Id);
+            var ocorrencia = await ObterOuCriarOcorrenciaSensorAsync(
+                sensor,
+                distanciaInicial,
+                gasInicial,
+                severidade,
+                timestampCadastro,
+                cancellationToken);
+            sensor.RegistrarLeitura(sensor.CodigoSensor, distanciaInicial, gasInicial, timestampCadastro, ocorrencia.Id);
         }
 
         _context.SensoresBueiros.Add(sensor);
@@ -153,7 +160,13 @@ public class TelemetriaService : ITelemetriaService
                 Mensagem: "Telemetria recebida dentro dos parâmetros normais.");
         }
 
-        var ocorrencia = await CriarOcorrenciaSensorAsync(sensor, request.DistanciaCm, request.GasPpm, severidade, cancellationToken);
+        var ocorrencia = await ObterOuCriarOcorrenciaSensorAsync(
+            sensor,
+            request.DistanciaCm,
+            request.GasPpm,
+            severidade,
+            timestampLeitura,
+            cancellationToken);
         sensor.RegistrarLeitura(request.SensorId, request.DistanciaCm, request.GasPpm, timestampLeitura, ocorrencia.Id);
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -183,18 +196,50 @@ public class TelemetriaService : ITelemetriaService
         return (severidade, ehCritico);
     }
 
-    private async Task<Ocorrencia> CriarOcorrenciaSensorAsync(
+    private async Task<Ocorrencia> ObterOuCriarOcorrenciaSensorAsync(
         SensorBueiro sensor,
         double distanciaCm,
         double gasPpm,
         double severidade,
+        DateTime timestampLeitura,
         CancellationToken cancellationToken)
     {
         var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(sensor.Localizacao.Bairro, cancellationToken);
         var ipc = _calculadoraIpc.CalcularIpc(severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
 
-        var descricao = $"Alerta automático IoT ({sensor.CodigoSensor}) no bueiro {sensor.Localizacao.Logradouro}: " +
-                        $"distância {distanciaCm}cm, gás {gasPpm}ppm.";
+        var descricao = $"Sensor IoT ({sensor.CodigoSensor}) em {sensor.Localizacao.Logradouro}: " +
+                        $"bueiro cheio, precisa de coleta (distância {distanciaCm}cm, gás {gasPpm}ppm).";
+
+        var candidatasAtivas = await _context.Ocorrencias
+            .Include(o => o.HistoricoStatus)
+            .Where(o => o.Status != StatusOcorrencia.CONCLUIDA)
+            .OrderByDescending(o => o.CriadaEm)
+            .ToListAsync(cancellationToken);
+
+        var doMesmoLocal = candidatasAtivas
+            .Where(o => (sensor.OcorrenciaId.HasValue && o.Id == sensor.OcorrenciaId.Value) ||
+                        o.Localizacao.MesmoLocal(sensor.Localizacao))
+            .ToList();
+
+        var ocorrenciaAtiva = doMesmoLocal
+            .FirstOrDefault(o => sensor.OcorrenciaId.HasValue && o.Id == sensor.OcorrenciaId.Value)
+            ?? doMesmoLocal.FirstOrDefault();
+
+        if (ocorrenciaAtiva is not null)
+        {
+            ocorrenciaAtiva.AtualizarAlertaSensor(descricao, severidade, ipc, timestampLeitura);
+
+            var duplicadasSensor = doMesmoLocal
+                .Where(o => o.Id != ocorrenciaAtiva.Id && o.Origem == OrigemOcorrencia.SENSOR)
+                .ToList();
+
+            if (duplicadasSensor.Count > 0)
+            {
+                _context.Ocorrencias.RemoveRange(duplicadasSensor);
+            }
+
+            return ocorrenciaAtiva;
+        }
 
         var ocorrencia = new Ocorrencia(
             OrigemOcorrencia.SENSOR,
@@ -206,6 +251,7 @@ public class TelemetriaService : ITelemetriaService
             ipc,
             usuarioId: null);
 
+        ocorrencia.AtualizarAlertaSensor(descricao, severidade, ipc, timestampLeitura);
         _context.Ocorrencias.Add(ocorrencia);
         return ocorrencia;
     }
