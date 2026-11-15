@@ -2,11 +2,12 @@ using DrenaAi.Api.Contexts.Ocorrencias;
 using DrenaAi.Api.Contexts.Priorizacao;
 using DrenaAi.Api.Data;
 using DrenaAi.Api.Exceptions;
+using Microsoft.EntityFrameworkCore;
 
 namespace DrenaAi.Api.Contexts.Telemetrias;
 
 /// <summary>
-/// Serviço responsável pela conversão de leituras físicas de sensores ESP32 em ocorrências críticas na fila de coleta.
+/// Serviço responsável pelo cadastro de bueiros monitorados, consulta do painel de sensores e ingestão de leituras ESP32.
 /// </summary>
 public class TelemetriaService : ITelemetriaService
 {
@@ -38,24 +39,112 @@ public class TelemetriaService : ITelemetriaService
     }
 
     /// <inheritdoc />
-    /// <exception cref="DomainException">Lançada quando os dados de telemetria possuem valores negativos ou identificadores ausentes.</exception>
+    /// <exception cref="DomainException">Lançada quando os dados de localização são inválidos ou as leituras são negativas.</exception>
+    public async Task<SensorBueiroResponse> CadastrarSensorAsync(
+        CadastrarSensorRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Logradouro) || string.IsNullOrWhiteSpace(request.Bairro))
+            throw new DomainException("Os campos 'logradouro' e 'bairro' são obrigatórios.");
+
+        var distanciaInicial = request.DistanciaCm ?? 30.0;
+        var gasInicial = request.GasPpm ?? 0.0;
+
+        if (distanciaInicial < 0 || gasInicial < 0)
+            throw new DomainException("As leituras iniciais de distância e gás não podem ser negativas.");
+
+        var localizacao = new Endereco(request.Logradouro, request.Bairro, request.Latitude, request.Longitude);
+        var sensor = new SensorBueiro(
+            localizacao,
+            request.CodigoSensor,
+            distanciaInicial,
+            gasInicial,
+            DateTime.UtcNow);
+
+        var (severidade, ehCritico) = AvaliarLeitura(distanciaInicial, gasInicial);
+        if (ehCritico)
+        {
+            var ocorrencia = await CriarOcorrenciaSensorAsync(sensor, distanciaInicial, gasInicial, severidade, cancellationToken);
+            sensor.RegistrarLeitura(sensor.CodigoSensor, distanciaInicial, gasInicial, DateTime.UtcNow, ocorrencia.Id);
+        }
+
+        _context.SensoresBueiros.Add(sensor);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Sensor/bueiro {BueiroId} ({CodigoSensor}) cadastrado em {Logradouro} - {Bairro}.",
+            sensor.Id,
+            sensor.CodigoSensor,
+            sensor.Localizacao.Logradouro,
+            sensor.Localizacao.Bairro);
+
+        return MapearRespostaSensor(sensor);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SensorBueiroResponse>> ListarSensoresAsync(
+        string? bairro = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.SensoresBueiros.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(bairro))
+        {
+            var bairroFiltro = bairro.Trim().ToLowerInvariant();
+            query = query.Where(s => s.Localizacao.Bairro.ToLower() == bairroFiltro);
+        }
+
+        var sensores = await query
+            .OrderByDescending(s => s.Obstrucao)
+            .ThenByDescending(s => s.UltimaLeitura)
+            .ToListAsync(cancellationToken);
+
+        return sensores.Select(MapearRespostaSensor).ToList();
+    }
+
+    /// <inheritdoc />
+    /// <exception cref="NotFoundException">Lançada quando o bueiro não é encontrado.</exception>
+    public async Task<SensorBueiroResponse> ObterSensorPorIdAsync(
+        Guid bueiroId,
+        CancellationToken cancellationToken = default)
+    {
+        var sensor = await _context.SensoresBueiros
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == bueiroId, cancellationToken);
+
+        if (sensor is null)
+            throw new NotFoundException($"Bueiro com ID '{bueiroId}' não encontrado.");
+
+        return MapearRespostaSensor(sensor);
+    }
+
+    /// <inheritdoc />
+    /// <exception cref="DomainException">Lançada quando os dados de telemetria possuem valores inválidos.</exception>
+    /// <exception cref="NotFoundException">Lançada quando o bueiro informado ainda não foi cadastrado.</exception>
     public async Task<TelemetriaResponse> ReceberTelemetriaAsync(
         TelemetriaRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.SensorId) || string.IsNullOrWhiteSpace(request.BueiroId))
-            throw new DomainException("Os identificadores 'sensorId' e 'bueiroId' são obrigatórios.");
+        if (request.BueiroId == Guid.Empty)
+            throw new DomainException("O identificador 'bueiroId' é obrigatório.");
 
         if (request.DistanciaCm < 0 || request.GasPpm < 0)
             throw new DomainException("As leituras de distância e gás não podem ser negativas.");
 
-        var severidadeDistancia = Math.Clamp((30.0 - request.DistanciaCm) / 30.0, 0.0, 1.0);
-        var severidadeGas = Math.Clamp(request.GasPpm / 800.0, 0.0, 1.0);
-        var severidade = Math.Round(Math.Max(severidadeDistancia, severidadeGas), 4);
+        var sensor = await _context.SensoresBueiros
+            .FirstOrDefaultAsync(s => s.Id == request.BueiroId, cancellationToken);
 
-        var ehCritico = request.DistanciaCm <= LimiarDistanciaCriticaCm || request.GasPpm >= LimiarGasCriticoPpm;
+        if (sensor is null)
+            throw new NotFoundException($"Bueiro '{request.BueiroId}' não cadastrado. Realize o cadastro prévio em POST /api/telemetria/sensores.");
+
+        var timestampLeitura = request.Timestamp ?? DateTime.UtcNow;
+        var (severidade, ehCritico) = AvaliarLeitura(request.DistanciaCm, request.GasPpm);
+
         if (!ehCritico)
         {
+            sensor.RegistrarLeitura(request.SensorId, request.DistanciaCm, request.GasPpm, timestampLeitura, ocorrenciaAtivaId: null);
+            await _context.SaveChangesAsync(cancellationToken);
+
             return new TelemetriaResponse(
                 OcorrenciaGerada: false,
                 OcorrenciaId: null,
@@ -64,54 +153,75 @@ public class TelemetriaService : ITelemetriaService
                 Mensagem: "Telemetria recebida dentro dos parâmetros normais.");
         }
 
-        var localizacao = ResolverLocalizacaoBueiro(request.BueiroId);
-        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(localizacao.Bairro, cancellationToken);
+        var ocorrencia = await CriarOcorrenciaSensorAsync(sensor, request.DistanciaCm, request.GasPpm, severidade, cancellationToken);
+        sensor.RegistrarLeitura(request.SensorId, request.DistanciaCm, request.GasPpm, timestampLeitura, ocorrencia.Id);
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Telemetria crítica do sensor {CodigoSensor} (Bueiro {BueiroId}) gerou ocorrência {OcorrenciaId} no bairro {Bairro} com IPC {Ipc}.",
+            sensor.CodigoSensor,
+            sensor.Id,
+            ocorrencia.Id,
+            sensor.Localizacao.Bairro,
+            ocorrencia.Ipc);
+
+        return new TelemetriaResponse(
+            OcorrenciaGerada: true,
+            OcorrenciaId: ocorrencia.Id,
+            Severidade: severidade,
+            Ipc: ocorrencia.Ipc,
+            Mensagem: "Telemetria crítica processada e ocorrência aberta na fila.");
+    }
+
+    private static (double severidade, bool ehCritico) AvaliarLeitura(double distanciaCm, double gasPpm)
+    {
+        var severidadeDistancia = Math.Clamp((30.0 - distanciaCm) / 30.0, 0.0, 1.0);
+        var severidadeGas = Math.Clamp(gasPpm / 800.0, 0.0, 1.0);
+        var severidade = Math.Round(Math.Max(severidadeDistancia, severidadeGas), 4);
+        var ehCritico = distanciaCm <= LimiarDistanciaCriticaCm || gasPpm >= LimiarGasCriticoPpm;
+        return (severidade, ehCritico);
+    }
+
+    private async Task<Ocorrencia> CriarOcorrenciaSensorAsync(
+        SensorBueiro sensor,
+        double distanciaCm,
+        double gasPpm,
+        double severidade,
+        CancellationToken cancellationToken)
+    {
+        var previsaoRisco = await _integracaoIa.ObterPrevisaoERiscoAsync(sensor.Localizacao.Bairro, cancellationToken);
         var ipc = _calculadoraIpc.CalcularIpc(severidade, previsaoRisco.ChuvaMm12h, previsaoRisco.VulnerabilidadeVia);
 
-        var descricao = $"Alerta automático IoT ({request.SensorId.Trim()}) no bueiro {request.BueiroId.Trim()}: " +
-                        $"distância {request.DistanciaCm}cm, gás {request.GasPpm}ppm.";
+        var descricao = $"Alerta automático IoT ({sensor.CodigoSensor}) no bueiro {sensor.Localizacao.Logradouro}: " +
+                        $"distância {distanciaCm}cm, gás {gasPpm}ppm.";
 
         var ocorrencia = new Ocorrencia(
             OrigemOcorrencia.SENSOR,
             "OBSTRUCAO_BUEIRO",
             descricao,
             fotoUrl: null,
-            localizacao,
+            new Endereco(sensor.Localizacao.Logradouro, sensor.Localizacao.Bairro, sensor.Localizacao.Latitude, sensor.Localizacao.Longitude),
             severidade,
             ipc,
             usuarioId: null);
 
         _context.Ocorrencias.Add(ocorrencia);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Telemetria crítica do sensor {SensorId} gerou ocorrência {OcorrenciaId} no bairro {Bairro} com IPC {Ipc}.",
-            request.SensorId,
-            ocorrencia.Id,
-            localizacao.Bairro,
-            ipc);
-
-        return new TelemetriaResponse(
-            OcorrenciaGerada: true,
-            OcorrenciaId: ocorrencia.Id,
-            Severidade: severidade,
-            Ipc: ipc,
-            Mensagem: "Telemetria crítica processada e ocorrência aberta na fila.");
+        return ocorrencia;
     }
 
-    private static Endereco ResolverLocalizacaoBueiro(string bueiroId)
-    {
-        var idUpper = bueiroId.Trim().ToUpperInvariant();
-
-        if (idUpper.Contains("VM"))
-            return new Endereco("Rua Domingos de Morais, 2564", "Vila Mariana", -23.589, -46.634);
-
-        if (idUpper.Contains("PI"))
-            return new Endereco("Rua dos Pinheiros, 498", "Pinheiros", -23.561, -46.701);
-
-        if (idUpper.Contains("MO"))
-            return new Endereco("Rua da Mooca, 1800", "Mooca", -23.556, -46.599);
-
-        return new Endereco("Praça da Bandeira, 40", "Vale do Anhangabaú", -23.5493, -46.6391);
-    }
+    private static SensorBueiroResponse MapearRespostaSensor(SensorBueiro sensor) =>
+        new(
+            Id: sensor.Id,
+            CodigoSensor: sensor.CodigoSensor,
+            Endereco: sensor.Localizacao.Logradouro,
+            Bairro: sensor.Localizacao.Bairro,
+            Latitude: sensor.Localizacao.Latitude,
+            Longitude: sensor.Localizacao.Longitude,
+            Obstrucao: sensor.Obstrucao,
+            DistanciaCm: sensor.DistanciaCm,
+            GasPpm: sensor.GasPpm,
+            GasDetectado: sensor.GasDetectado,
+            UltimaLeitura: sensor.UltimaLeitura,
+            OcorrenciaId: sensor.OcorrenciaId);
 }

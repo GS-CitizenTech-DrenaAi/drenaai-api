@@ -19,10 +19,13 @@ namespace DrenaAi.Tests;
 /// </summary>
 public class ApiSecurityAndEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private const string TestDeviceApiKey = "test-only-device-api-key";
+    private const string TestJwtSecretKey = "test-only-jwt-secret-key-with-at-least-32-chars";
+
     private readonly WebApplicationFactory<Program> _factory;
 
     /// <summary>
-    /// Inicializa a suíte configurando o host de testes com banco em memória.
+    /// Inicializa a suíte configurando o host de testes com banco em memória e chaves isoladas de teste.
     /// </summary>
     /// <param name="factory">Fábrica padrão do servidor de testes ASP.NET Core.</param>
     public ApiSecurityAndEndpointsTests(WebApplicationFactory<Program> factory)
@@ -31,6 +34,8 @@ public class ApiSecurityAndEndpointsTests : IClassFixture<WebApplicationFactory<
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
+            builder.UseSetting("DeviceAuth:ApiKey", TestDeviceApiKey);
+            builder.UseSetting("JwtSettings:SecretKey", TestJwtSecretKey);
             builder.ConfigureServices(services =>
             {
                 var descriptors = services
@@ -78,7 +83,7 @@ public class ApiSecurityAndEndpointsTests : IClassFixture<WebApplicationFactory<
     {
         // Arrange
         var client = _factory.CreateClient();
-        var payload = new TelemetriaRequest("ESP32-SP-01", "BUEIRO-VM-01", 8.5, 650.0, DateTime.UtcNow);
+        var payload = new TelemetriaRequest(Guid.NewGuid(), 8.5, 650.0);
 
         // Act 1: Sem cabeçalho
         var semHeader = await client.PostAsJsonAsync("/api/telemetria", payload);
@@ -97,25 +102,48 @@ public class ApiSecurityAndEndpointsTests : IClassFixture<WebApplicationFactory<
     }
 
     /// <summary>
-    /// Deve retornar 202 Accepted quando X-Device-Api-Key válida for informada.
+    /// Deve cadastrar o sensor, retornar 202 Accepted ao enviar telemetria com X-Device-Api-Key válida
+    /// e listar o sensor atualizado em GET /api/telemetria/sensores.
     /// </summary>
     [Fact]
     public async Task PostTelemetria_DeveRetornar202Accepted_QuandoApiKeyForValida()
     {
         // Arrange
         var client = _factory.CreateClient();
-        var payload = new TelemetriaRequest("ESP32-SP-01", "BUEIRO-VM-01", 8.5, 650.0, DateTime.UtcNow);
+        var cadastroPayload = new CadastrarSensorRequest(
+            "Av. São João, 290",
+            "Vale do Anhangabaú",
+            -23.5448,
+            -46.6386);
+
+        var cadastroRequest = new HttpRequestMessage(HttpMethod.Post, "/api/telemetria/sensores")
+        {
+            Content = JsonContent.Create(cadastroPayload)
+        };
+        cadastroRequest.Headers.Add(ApiKeyAuthFilter.ApiKeyHeaderName, TestDeviceApiKey);
+
+        var cadastroResponse = await client.SendAsync(cadastroRequest);
+        cadastroResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var sensorCriado = await cadastroResponse.Content.ReadFromJsonAsync<SensorBueiroResponse>();
+        sensorCriado.Should().NotBeNull();
+
+        var payload = new TelemetriaRequest(sensorCriado!.Id, 8.5, 650.0);
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/telemetria")
         {
             Content = JsonContent.Create(payload)
         };
-        request.Headers.Add(ApiKeyAuthFilter.ApiKeyHeaderName, "ESP32-DRENAAI-BUEIRO-KEY-2026");
+        request.Headers.Add(ApiKeyAuthFilter.ApiKeyHeaderName, TestDeviceApiKey);
 
         // Act
         var response = await client.SendAsync(request);
+        var listagemResponse = await client.GetAsync("/api/telemetria/sensores");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        listagemResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sensores = await listagemResponse.Content.ReadFromJsonAsync<List<SensorBueiroResponse>>();
+        sensores.Should().Contain(s => s.Id == sensorCriado.Id && s.Obstrucao == 72 && s.GasDetectado);
     }
 
     /// <summary>
@@ -154,6 +182,8 @@ public class ApiSecurityAndEndpointsTests : IClassFixture<WebApplicationFactory<
         json.Should().Contain("/api/ocorrencias");
         json.Should().Contain("/api/ocorrencias/{id}");
         json.Should().Contain("/api/telemetria");
+        json.Should().Contain("/api/telemetria/sensores");
+        json.Should().Contain("/api/telemetria/sensores/{bueiroId}");
         json.Should().Contain("/api/previsao");
         json.Should().Contain("/api/severidade");
         json.Should().Contain("/api/fila");

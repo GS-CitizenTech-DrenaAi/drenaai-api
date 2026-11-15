@@ -107,6 +107,48 @@ namespace DrenaAi.Api.Data.Migrations
                     b.ToTable("TB_DRENA_OCORRENCIA");
                 });
 
+            modelBuilder.Entity("DrenaAi.Api.Contexts.Telemetrias.SensorBueiro", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("RAW(16)")
+                        .HasColumnName("ID_SENSOR_BUEIRO");
+
+                    b.Property<string>("CodigoSensor")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("NVARCHAR2(60)")
+                        .HasColumnName("CODIGO_SENSOR");
+
+                    b.Property<double>("DistanciaCm")
+                        .HasColumnType("BINARY_DOUBLE")
+                        .HasColumnName("DISTANCIA_CM");
+
+                    b.Property<bool>("GasDetectado")
+                        .HasColumnType("NUMBER(1)")
+                        .HasColumnName("GAS_DETECTADO");
+
+                    b.Property<double>("GasPpm")
+                        .HasColumnType("BINARY_DOUBLE")
+                        .HasColumnName("GAS_PPM");
+
+                    b.Property<int>("Obstrucao")
+                        .HasColumnType("NUMBER(10)")
+                        .HasColumnName("OBSTRUCAO_PERCENTUAL");
+
+                    b.Property<Guid?>("OcorrenciaId")
+                        .HasColumnType("RAW(16)")
+                        .HasColumnName("ID_OCORRENCIA_ATIVA");
+
+                    b.Property<DateTime>("UltimaLeitura")
+                        .HasColumnType("TIMESTAMP(7)")
+                        .HasColumnName("DT_ULTIMA_LEITURA");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TB_DRENA_SENSOR_BUEIRO");
+                });
+
             modelBuilder.Entity("DrenaAi.Api.Contexts.Usuarios.Usuario", b =>
                 {
                     b.Property<Guid>("Id")
@@ -186,6 +228,45 @@ namespace DrenaAi.Api.Data.Migrations
 
                             b1.WithOwner()
                                 .HasForeignKey("OcorrenciaId");
+                        });
+
+                    b.Navigation("Localizacao")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DrenaAi.Api.Contexts.Telemetrias.SensorBueiro", b =>
+                {
+                    b.OwnsOne("DrenaAi.Api.Contexts.Ocorrencias.Endereco", "Localizacao", b1 =>
+                        {
+                            b1.Property<Guid>("SensorBueiroId")
+                                .HasColumnType("RAW(16)");
+
+                            b1.Property<string>("Bairro")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("NVARCHAR2(100)")
+                                .HasColumnName("BAIRRO");
+
+                            b1.Property<double>("Latitude")
+                                .HasColumnType("BINARY_DOUBLE")
+                                .HasColumnName("LATITUDE");
+
+                            b1.Property<string>("Logradouro")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("NVARCHAR2(200)")
+                                .HasColumnName("ENDERECO");
+
+                            b1.Property<double>("Longitude")
+                                .HasColumnType("BINARY_DOUBLE")
+                                .HasColumnName("LONGITUDE");
+
+                            b1.HasKey("SensorBueiroId");
+
+                            b1.ToTable("TB_DRENA_SENSOR_BUEIRO");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SensorBueiroId");
                         });
 
                     b.Navigation("Localizacao")

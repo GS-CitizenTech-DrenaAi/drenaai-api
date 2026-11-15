@@ -1,4 +1,5 @@
 using DrenaAi.Api.Contexts.Ocorrencias;
+using DrenaAi.Api.Contexts.Telemetrias;
 using DrenaAi.Api.Contexts.Usuarios;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,6 +32,11 @@ public class AppDbContext : DbContext
     /// Conjunto de registros históricos de transição de status das ocorrências.
     /// </summary>
     public DbSet<HistoricoStatus> HistoricosStatus => Set<HistoricoStatus>();
+
+    /// <summary>
+    /// Conjunto de bueiros monitorados por sensores IoT ESP32.
+    /// </summary>
+    public DbSet<SensorBueiro> SensoresBueiros => Set<SensorBueiro>();
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -86,6 +92,32 @@ public class AppDbContext : DbContext
             entity.Property(h => h.Status)
                 .HasConversion<string>()
                 .HasMaxLength(30);
+        });
+
+        modelBuilder.Entity<SensorBueiro>(entity =>
+        {
+            entity.OwnsOne(s => s.Localizacao, endereco =>
+            {
+                endereco.Property(e => e.Logradouro)
+                    .HasColumnName("ENDERECO")
+                    .HasMaxLength(200)
+                    .IsRequired();
+
+                endereco.Property(e => e.Bairro)
+                    .HasColumnName("BAIRRO")
+                    .HasMaxLength(100)
+                    .IsRequired();
+
+                endereco.Property(e => e.Latitude)
+                    .HasColumnName("LATITUDE")
+                    .IsRequired();
+
+                endereco.Property(e => e.Longitude)
+                    .HasColumnName("LONGITUDE")
+                    .IsRequired();
+            });
+
+            entity.Navigation(s => s.Localizacao).IsRequired();
         });
     }
 }
