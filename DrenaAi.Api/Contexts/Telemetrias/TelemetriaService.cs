@@ -268,6 +268,11 @@ public class TelemetriaService : ITelemetriaService
             DistanciaCm: sensor.DistanciaCm,
             GasPpm: sensor.GasPpm,
             GasDetectado: sensor.GasDetectado,
-            UltimaLeitura: sensor.UltimaLeitura,
+            UltimaLeitura: NormalizarUtc(sensor.UltimaLeitura),
             OcorrenciaId: sensor.OcorrenciaId);
+
+    private static DateTime NormalizarUtc(DateTime data) =>
+        data.Kind == DateTimeKind.Utc
+            ? data
+            : DateTime.SpecifyKind(data, DateTimeKind.Utc);
 }
