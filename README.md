@@ -2,7 +2,7 @@
 
 ## Índice
 
-| [Motivação](#motivação-do-projeto) | [Integrantes](#integrantes--3espg) | [Integração](#integração-com-o-projeto) | [Tecnologias](#estruturas-arquitetura-e-tecnologias) | [Endpoints](#endpoints-da-api) | [Como Executar](#como-executar-o-projeto) | [Testes Automatizados](#testes-automatizados) |
+| [Motivação](#motivação-do-projeto) | [Integrantes](#integrantes--3espg) | [Evidência](#evidência-da-aplicação) | [Integração](#integração-com-o-projeto) | [Tecnologias](#estruturas-arquitetura-e-tecnologias) | [Endpoints](#endpoints-da-api) | [Como Executar](#como-executar-o-projeto) | [Testes Automatizados](#testes-automatizados) |
 
 ## Motivação do Projeto
 
@@ -20,6 +20,12 @@ O projeto está alinhado aos Objetivos de Desenvolvimento Sustentável da ONU, c
 * Pedro Henrique Mendes dos Santos **(RM555332)**
 * Rafael Teofilo Lucena **(RM555600)**
 * Vinicius Fernandes Tavares Bittencourt **(RM558909)**
+
+---
+
+## Evidência da Aplicação
+
+**[Assista ao vídeo no YouTube](https://www.youtube.com/watch?v=dxE7q2-48ik)**: Backend C# respondendo às requisições feitas pelo app DrenaAi.
 
 ---
 
